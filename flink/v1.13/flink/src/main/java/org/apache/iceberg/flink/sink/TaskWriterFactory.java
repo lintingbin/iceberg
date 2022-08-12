@@ -18,8 +18,8 @@
  */
 package org.apache.iceberg.flink.sink;
 
-import java.io.IOException;
 import java.io.Serializable;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.TaskWriter;
 
 /**
@@ -45,9 +45,9 @@ public interface TaskWriterFactory<T> extends Serializable {
   TaskWriter<T> create();
 
   /**
-   * close the factory
+   * Update schema for the table
    *
-   * @throws IOException close may be throw IOException
+   * @param newSchema the new schema of table
    */
-  void close() throws IOException;
+  void rebuildAppenderFactory(Schema newSchema);
 }

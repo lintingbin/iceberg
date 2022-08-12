@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.flink.sink;
 
-import java.io.IOException;
 import java.util.List;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.logical.RowType;
@@ -28,7 +27,6 @@ import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.flink.RowDataWrapper;
-import org.apache.iceberg.flink.TableLoader;
 import org.apache.iceberg.io.FileAppenderFactory;
 import org.apache.iceberg.io.FileIO;
 import org.apache.iceberg.io.OutputFileFactory;
@@ -42,17 +40,16 @@ import org.apache.iceberg.util.ArrayUtil;
 
 public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
   private final Table table;
-  private final Schema schema;
-  private final RowType flinkSchema;
   private final PartitionSpec spec;
   private final FileIO io;
   private final long targetFileSizeBytes;
   private final FileFormat format;
   private final List<Integer> equalityFieldIds;
   private final boolean upsert;
-  private final FileAppenderFactory<RowData> appenderFactory;
-  private final TableLoader tableLoader;
 
+  private Schema schema;
+  private RowType flinkSchema;
+  private FileAppenderFactory<RowData> appenderFactory;
   private transient OutputFileFactory outputFileFactory;
 
   public RowDataTaskWriterFactory(
@@ -62,17 +59,6 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
       FileFormat format,
       List<Integer> equalityFieldIds,
       boolean upsert) {
-    this(table, flinkSchema, targetFileSizeBytes, format, equalityFieldIds, upsert, null);
-  }
-
-  public RowDataTaskWriterFactory(
-      Table table,
-      RowType flinkSchema,
-      long targetFileSizeBytes,
-      FileFormat format,
-      List<Integer> equalityFieldIds,
-      boolean upsert,
-      TableLoader tableLoader) {
     this.table = table;
     this.schema = table.schema();
     this.flinkSchema = flinkSchema;
@@ -82,12 +68,13 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
     this.format = format;
     this.equalityFieldIds = equalityFieldIds;
     this.upsert = upsert;
-    this.tableLoader = tableLoader;
+    buildAppenderFactory();
+  }
 
+  private void buildAppenderFactory() {
     if (equalityFieldIds == null || equalityFieldIds.isEmpty()) {
       this.appenderFactory =
-          new FlinkAppenderFactory(
-              schema, flinkSchema, table.properties(), spec, null, null, null, tableLoader);
+          new FlinkAppenderFactory(schema, flinkSchema, table.properties(), spec);
     } else if (upsert) {
       // In upsert mode, only the new row is emitted using INSERT row kind. Therefore, any column of
       // the inserted row
@@ -102,8 +89,7 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
               spec,
               ArrayUtil.toIntArray(equalityFieldIds),
               TypeUtil.select(schema, Sets.newHashSet(equalityFieldIds)),
-              null,
-              tableLoader);
+              null);
     } else {
       this.appenderFactory =
           new FlinkAppenderFactory(
@@ -113,8 +99,7 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
               spec,
               ArrayUtil.toIntArray(equalityFieldIds),
               schema,
-              null,
-              tableLoader);
+              null);
     }
   }
 
@@ -122,9 +107,6 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
   public void initialize(int taskId, int attemptId) {
     this.outputFileFactory =
         OutputFileFactory.builderFor(table, taskId, attemptId).format(format).build();
-    if (tableLoader != null) {
-      tableLoader.open();
-    }
   }
 
   @Override
@@ -179,6 +161,13 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
     }
   }
 
+  @Override
+  public void rebuildAppenderFactory(Schema newSchema) {
+    this.schema = newSchema;
+    this.flinkSchema = FlinkSink.toFlinkRowType(newSchema, null);
+    buildAppenderFactory();
+  }
+
   private static class RowDataPartitionedFanoutWriter extends PartitionedFanoutWriter<RowData> {
 
     private final PartitionKey partitionKey;
@@ -202,13 +191,6 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
     protected PartitionKey partition(RowData row) {
       partitionKey.partition(rowDataWrapper.wrap(row));
       return partitionKey;
-    }
-  }
-
-  @Override
-  public void close() throws IOException {
-    if (tableLoader != null) {
-      tableLoader.close();
     }
   }
 }

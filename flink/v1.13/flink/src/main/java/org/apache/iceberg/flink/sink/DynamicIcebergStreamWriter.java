@@ -22,14 +22,15 @@ import java.io.IOException;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.BoundedOneInput;
 import org.apache.flink.streaming.api.operators.ChainingStrategy;
-import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
+import org.apache.flink.streaming.api.operators.TwoInputStreamOperator;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.TaskWriter;
 import org.apache.iceberg.io.WriteResult;
 import org.apache.iceberg.relocated.com.google.common.base.MoreObjects;
 
-class IcebergStreamWriter<T> extends AbstractStreamOperator<WriteResult>
-    implements OneInputStreamOperator<T, WriteResult>, BoundedOneInput {
+class DynamicIcebergStreamWriter<T> extends AbstractStreamOperator<WriteResult>
+    implements TwoInputStreamOperator<T, Schema, WriteResult>, BoundedOneInput {
 
   private static final long serialVersionUID = 1L;
 
@@ -40,7 +41,7 @@ class IcebergStreamWriter<T> extends AbstractStreamOperator<WriteResult>
   private transient int subTaskId;
   private transient int attemptId;
 
-  IcebergStreamWriter(String fullTableName, TaskWriterFactory<T> taskWriterFactory) {
+  DynamicIcebergStreamWriter(String fullTableName, TaskWriterFactory<T> taskWriterFactory) {
     this.fullTableName = fullTableName;
     this.taskWriterFactory = taskWriterFactory;
     setChainingStrategy(ChainingStrategy.ALWAYS);
@@ -53,9 +54,6 @@ class IcebergStreamWriter<T> extends AbstractStreamOperator<WriteResult>
 
     // Initialize the task writer factory.
     this.taskWriterFactory.initialize(subTaskId, attemptId);
-
-    // Initialize the task writer.
-    this.writer = taskWriterFactory.create();
   }
 
   @Override
@@ -67,8 +65,17 @@ class IcebergStreamWriter<T> extends AbstractStreamOperator<WriteResult>
   }
 
   @Override
-  public void processElement(StreamRecord<T> element) throws Exception {
+  public void processElement1(StreamRecord<T> element) throws Exception {
     writer.write(element.getValue());
+  }
+
+  @Override
+  public void processElement2(StreamRecord<Schema> element) throws Exception {
+    taskWriterFactory.rebuildAppenderFactory(element.getValue());
+    if (writer != null) {
+      emit(writer.complete());
+    }
+    this.writer = taskWriterFactory.create();
   }
 
   @Override

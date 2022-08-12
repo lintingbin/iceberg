@@ -30,13 +30,11 @@ import org.apache.iceberg.MetricsConfig;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.StructLike;
-import org.apache.iceberg.Table;
 import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.deletes.EqualityDeleteWriter;
 import org.apache.iceberg.deletes.PositionDeleteWriter;
 import org.apache.iceberg.encryption.EncryptedOutputFile;
 import org.apache.iceberg.flink.FlinkSchemaUtil;
-import org.apache.iceberg.flink.TableLoader;
 import org.apache.iceberg.flink.data.FlinkAvroWriter;
 import org.apache.iceberg.flink.data.FlinkOrcWriter;
 import org.apache.iceberg.flink.data.FlinkParquetWriters;
@@ -55,17 +53,15 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
   private final int[] equalityFieldIds;
   private final Schema eqDeleteRowSchema;
   private final Schema posDeleteRowSchema;
-  private final TableLoader tableLoader;
+  private final Schema schema;
+  private final RowType flinkSchema;
 
   private RowType eqDeleteFlinkSchema = null;
   private RowType posDeleteFlinkSchema = null;
-  private Table table = null;
-  private Schema schema;
-  private RowType flinkSchema;
 
   public FlinkAppenderFactory(
       Schema schema, RowType flinkSchema, Map<String, String> props, PartitionSpec spec) {
-    this(schema, flinkSchema, props, spec, null, null, null, null);
+    this(schema, flinkSchema, props, spec, null, null, null);
   }
 
   public FlinkAppenderFactory(
@@ -76,26 +72,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
       int[] equalityFieldIds,
       Schema eqDeleteRowSchema,
       Schema posDeleteRowSchema) {
-    this(
-        schema,
-        flinkSchema,
-        props,
-        spec,
-        equalityFieldIds,
-        eqDeleteRowSchema,
-        posDeleteRowSchema,
-        null);
-  }
-
-  public FlinkAppenderFactory(
-      Schema schema,
-      RowType flinkSchema,
-      Map<String, String> props,
-      PartitionSpec spec,
-      int[] equalityFieldIds,
-      Schema eqDeleteRowSchema,
-      Schema posDeleteRowSchema,
-      TableLoader tableLoader) {
     this.schema = schema;
     this.flinkSchema = flinkSchema;
     this.props = props;
@@ -103,7 +79,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
     this.equalityFieldIds = equalityFieldIds;
     this.eqDeleteRowSchema = eqDeleteRowSchema;
     this.posDeleteRowSchema = posDeleteRowSchema;
-    this.tableLoader = tableLoader;
   }
 
   private RowType lazyEqDeleteFlinkSchema() {
@@ -125,7 +100,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
   @Override
   public FileAppender<RowData> newAppender(OutputFile outputFile, FileFormat format) {
     MetricsConfig metricsConfig = MetricsConfig.fromProperties(props);
-    refreshTable();
     try {
       switch (format) {
         case AVRO:
@@ -187,7 +161,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
         "Equality delete row schema shouldn't be null when creating equality-delete writer");
 
     MetricsConfig metricsConfig = MetricsConfig.fromProperties(props);
-    refreshTable();
     try {
       switch (format) {
         case AVRO:
@@ -242,7 +215,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
   public PositionDeleteWriter<RowData> newPosDeleteWriter(
       EncryptedOutputFile outputFile, FileFormat format, StructLike partition) {
     MetricsConfig metricsConfig = MetricsConfig.fromProperties(props);
-    refreshTable();
     try {
       switch (format) {
         case AVRO:
@@ -294,20 +266,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
       }
     } catch (IOException e) {
       throw new UncheckedIOException(e);
-    }
-  }
-
-  private void refreshTable() {
-    if (tableLoader != null) {
-      if (table == null) {
-        table = tableLoader.loadTable();
-      } else {
-        table.refresh();
-      }
-      if (!table.schema().sameSchema(schema)) {
-        schema = table.schema();
-        flinkSchema = FlinkSink.toFlinkRowType(schema, null);
-      }
     }
   }
 }
