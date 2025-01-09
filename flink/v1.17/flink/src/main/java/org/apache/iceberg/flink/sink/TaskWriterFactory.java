@@ -19,6 +19,7 @@
 package org.apache.iceberg.flink.sink;
 
 import java.io.Serializable;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.io.TaskWriter;
 
 /**
@@ -42,4 +43,6 @@ public interface TaskWriterFactory<T> extends Serializable {
    * @return a newly created task writer.
    */
   TaskWriter<T> create();
+
+  void rebuildAppenderFactory(Schema newSchema);
 }

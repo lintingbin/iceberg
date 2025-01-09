@@ -66,6 +66,15 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
       Schema schema,
       RowType flinkSchema,
       Map<String, String> props,
+      PartitionSpec spec) {
+    this(table, schema, flinkSchema, props, spec, null, null, null);
+  }
+
+  public FlinkAppenderFactory(
+      Table table,
+      Schema schema,
+      RowType flinkSchema,
+      Map<String, String> props,
       PartitionSpec spec,
       int[] equalityFieldIds,
       Schema eqDeleteRowSchema,
@@ -99,7 +108,7 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
 
   @Override
   public FileAppender<RowData> newAppender(OutputFile outputFile, FileFormat format) {
-    MetricsConfig metricsConfig = MetricsConfig.forTable(table);
+    MetricsConfig metricsConfig = MetricsConfig.fromProperties(props);
     try {
       switch (format) {
         case AVRO:
@@ -160,7 +169,7 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
         eqDeleteRowSchema,
         "Equality delete row schema shouldn't be null when creating equality-delete writer");
 
-    MetricsConfig metricsConfig = MetricsConfig.forTable(table);
+    MetricsConfig metricsConfig = MetricsConfig.fromProperties(props);
     try {
       switch (format) {
         case AVRO:
@@ -169,7 +178,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
               .withPartition(partition)
               .overwrite()
               .setAll(props)
-              .metricsConfig(metricsConfig)
               .rowSchema(eqDeleteRowSchema)
               .withSpec(spec)
               .withKeyMetadata(outputFile.keyMetadata())
@@ -183,7 +191,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
               .withPartition(partition)
               .overwrite()
               .setAll(props)
-              .metricsConfig(metricsConfig)
               .rowSchema(eqDeleteRowSchema)
               .withSpec(spec)
               .withKeyMetadata(outputFile.keyMetadata())
@@ -216,7 +223,7 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
   @Override
   public PositionDeleteWriter<RowData> newPosDeleteWriter(
       EncryptedOutputFile outputFile, FileFormat format, StructLike partition) {
-    MetricsConfig metricsConfig = MetricsConfig.forPositionDelete(table);
+    MetricsConfig metricsConfig = MetricsConfig.fromProperties(props);
     try {
       switch (format) {
         case AVRO:
@@ -225,7 +232,6 @@ public class FlinkAppenderFactory implements FileAppenderFactory<RowData>, Seria
               .withPartition(partition)
               .overwrite()
               .setAll(props)
-              .metricsConfig(metricsConfig)
               .rowSchema(posDeleteRowSchema)
               .withSpec(spec)
               .withKeyMetadata(outputFile.keyMetadata())

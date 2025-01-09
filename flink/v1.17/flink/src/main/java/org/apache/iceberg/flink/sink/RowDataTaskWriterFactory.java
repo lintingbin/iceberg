@@ -41,16 +41,17 @@ import org.apache.iceberg.util.ArrayUtil;
 
 public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
   private final Table table;
-  private final Schema schema;
-  private final RowType flinkSchema;
   private final PartitionSpec spec;
   private final FileIO io;
   private final long targetFileSizeBytes;
   private final FileFormat format;
   private final List<Integer> equalityFieldIds;
   private final boolean upsert;
-  private final FileAppenderFactory<RowData> appenderFactory;
+  private final Map<String, String> writeProperties;
 
+  private Schema schema;
+  private RowType flinkSchema;
+  private FileAppenderFactory<RowData> appenderFactory;
   private transient OutputFileFactory outputFileFactory;
 
   public RowDataTaskWriterFactory(
@@ -68,9 +69,13 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
     this.io = table.io();
     this.targetFileSizeBytes = targetFileSizeBytes;
     this.format = format;
+    this.writeProperties = writeProperties;
     this.equalityFieldIds = equalityFieldIds;
     this.upsert = upsert;
+    buildAppenderFactory();
+  }
 
+  private void buildAppenderFactory() {
     if (equalityFieldIds == null || equalityFieldIds.isEmpty()) {
       this.appenderFactory =
           new FlinkAppenderFactory(
@@ -161,6 +166,13 @@ public class RowDataTaskWriterFactory implements TaskWriterFactory<RowData> {
             upsert);
       }
     }
+  }
+
+  @Override
+  public void rebuildAppenderFactory(Schema newSchema) {
+    this.schema = newSchema;
+    this.flinkSchema = FlinkSink.toFlinkRowType(newSchema, null);
+    buildAppenderFactory();
   }
 
   private static class RowDataPartitionedFanoutWriter extends PartitionedFanoutWriter<RowData> {
